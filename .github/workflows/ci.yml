@@ -1,1 +1,52 @@
 # .github/workflows/ci.yml
+
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - main
+
+jobs:
+  # You specify a job identified as build that will run on the latest Ubuntu runner 
+  # provided by GitHub. Its first step is to check out the single commit 
+  # that triggered the workflow using the actions/checkout GitHub Action. 
+  # Because GitHub Actions are really GitHub repositories in disguise, you can provide 
+  # a Git tag or a commit hash after the at-sign (@) to choose a specific version of the action.
+  build:
+    name: Build Docker image and run end-to-end tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code from GitHub
+        uses: actions/checkout@v3
+      # You request that Docker Compose rebuild your images with the --build flag 
+      # and stop all containers when the test-service terminates. 
+      # Otherwise, your job could run indefinitely. This also returns the exit code 
+      # of the test-service to the runner, potentially aborting subsequent steps.
+      - name: Run end-to-end tests
+        run: >
+          docker compose --profile testing up
+          --build
+          --exit-code-from test-service
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        if: ${{ github.event_name == 'push' }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Tag and push your new Docker image using another GitHub Action 
+      # "build-push-action" from the marketplace.
+      - name: Push image to Docker Hub
+        uses: docker/build-push-action@v4.0.0
+        if: ${{ github.event_name == 'push' }}
+        # In the 'with' section, you specify the path to your Dockerfile, 
+        # request the action to push an image, and list the tags for your image. 
+        with:
+          context: ./web
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/page-tracker:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/page-tracker:latest
